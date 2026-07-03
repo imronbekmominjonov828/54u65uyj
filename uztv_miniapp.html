@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>O'zbek TV — Mini App</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg: #0b1620;
+    --bg-2: #101f2c;
+    --card: #14283a;
+    --card-hi: #1b3448;
+    --line: #22405a;
+    --text: #eef4f7;
+    --muted: #8fa7b8;
+    --turquoise: #17b6c4;
+    --pomegranate: #e0433d;
+    --sun: #f2b632;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1100px 500px at 50% -120px, rgba(23,182,196,.16), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    min-height:100vh;
+    padding-bottom:24px;
+  }
+
+  /* ---- header ---- */
+  header{
+    padding:22px 18px 14px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .sun{
+    width:34px;height:34px;border-radius:50%;
+    background: radial-gradient(circle at 35% 35%, #ffe08a, var(--sun) 60%, #c98f1c 100%);
+    box-shadow:0 0 22px rgba(242,182,50,.45);
+    flex:0 0 auto;
+  }
+  header h1{
+    font-size:19px;
+    margin:0;
+    font-weight:700;
+    letter-spacing:.2px;
+  }
+  header p{
+    margin:2px 0 0;
+    font-size:12.5px;
+    color:var(--muted);
+  }
+
+  /* ---- grid of channels ---- */
+  #grid{
+    display:grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap:12px;
+    padding:6px 16px 18px;
+  }
+  .ch{
+    background: linear-gradient(180deg, var(--card), var(--card-hi));
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:16px 14px;
+    text-align:left;
+    color:var(--text);
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    min-height:96px;
+    cursor:pointer;
+    transition: transform .12s ease, border-color .12s ease;
+  }
+  .ch:active{ transform: scale(.96); border-color: var(--turquoise); }
+  .badge{
+    width:38px;height:38px;border-radius:11px;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:800; font-size:15px; color:#06141c;
+  }
+  .ch .name{ font-size:14.5px; font-weight:700; line-height:1.25; }
+  .ch .tag{ font-size:11px; color:var(--muted); }
+  .live-dot{
+    display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--pomegranate); margin-right:5px;
+    box-shadow:0 0 6px var(--pomegranate);
+  }
+
+  /* ---- player view ---- */
+  #player-view{
+    position:fixed; inset:0; background:#000; display:none;
+    flex-direction:column; z-index:50;
+  }
+  #player-view.open{ display:flex; }
+  .player-top{
+    display:flex; align-items:center; gap:10px;
+    padding:14px 14px 10px;
+    background:linear-gradient(180deg, rgba(0,0,0,.85), rgba(0,0,0,0));
+    position:absolute; top:0; left:0; right:0; z-index:2;
+  }
+  .back-btn{
+    width:34px;height:34px;border-radius:10px;
+    background:rgba(255,255,255,.12);
+    border:none; color:#fff; font-size:18px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .player-title{ font-size:14.5px; font-weight:700; }
+  .frame-wrap{ flex:1; display:flex; align-items:center; justify-content:center; position:relative; }
+  .frame-wrap iframe{ width:100%; height:100%; border:0; }
+  .fallback-note{
+    position:absolute; bottom:18px; left:0; right:0;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    color:var(--muted); font-size:12.5px;
+  }
+  .fallback-btn{
+    background:var(--turquoise); color:#06141c; border:none;
+    padding:8px 14px; border-radius:10px; font-weight:700; font-size:12.5px;
+  }
+  .ext-note{
+    color:var(--muted); font-size:13px; text-align:center; padding:0 30px;
+  }
+
+  footer{
+    padding:10px 18px 4px; text-align:center; color:var(--muted); font-size:11px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="sun"></div>
+  <div>
+    <h1>O'zbek TV</h1>
+    <p>Kanalni tanlang — jonli efir shu yerda ochiladi</p>
+  </div>
+</header>
+
+<div id="grid"></div>
+
+<footer>Rasmiy translyatsiya manbalari orqali ko'rsatiladi</footer>
+
+<div id="player-view">
+  <div class="player-top">
+    <button class="back-btn" onclick="closePlayer()">‹</button>
+    <div class="player-title" id="player-title"></div>
+  </div>
+  <div class="frame-wrap" id="frame-wrap"></div>
+</div>
+
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+if (tg) { tg.ready(); tg.expand(); }
+
+// Kanallar ro'yxati.
+// type "yt"  -> YouTube live_stream embed orqali ko'rsatiladi (kanal hozir efirga uzatsa avtomatik chiqadi)
+// type "link" -> rasmiy sahifaga tashqi havola sifatida ochiladi (Telegram ichida iframe orqali ko'rsatib bo'lmaydigan saytlar uchun)
+const CHANNELS = [
+  { key:"milliy",  name:"Milliy TV",  tag:"O'zMTRK — 24/7", color:"#17b6c4", type:"link", url:"https://tvcom.uz/uz/channel/65/milliy-tv" },
+  { key:"yoshlar", name:"Yoshlar",    tag:"O'zMTRK — 24/7", color:"#e0433d", type:"link", url:"https://tvcom.uz/uz/channel/50/yoshlar" },
+  { key:"uz24",    name:"O'zbekiston 24", tag:"O'zMTRK — 24/7", color:"#f2b632", type:"link", url:"https://tvcom.uz/uz/channel/49/ozbekiston" },
+  { key:"sport",   name:"Sport",      tag:"O'zMTRK — 24/7", color:"#3f8f5f", type:"link", url:"https://tvcom.uz/uz/channel/52/sport" },
+  { key:"portal",  name:"O'zMTRK portal", tag:"Barcha kanallar", color:"#8f6fe0", type:"link", url:"https://tvcom.uz/uz/tv" },
+  { key:"zor",     name:"Zo'r TV",    tag:"Xususiy", color:"#d64545", type:"link", url:"https://www.youtube.com/channel/UCisKdSbTsPt16yGuN4iNgrA" },
+  { key:"my5",     name:"MY5",        tag:"Mening Yurtim", color:"#2f9e6b", type:"link", url:"https://www.youtube.com/channel/UCnALvkOlLDYqNoeNguy2AcQ" },
+  { key:"uzreport",name:"UzReport TV",tag:"Xususiy", color:"#3a6fd9", type:"link", url:"https://www.youtube.com/channel/UCFVnOdIXSURzhSQLQhrILWQ" },
+  { key:"bolajon", name:"Bolajon",    tag:"O'zMTRK — 24/7", color:"#f28c2e", type:"link", url:"https://tvcom.uz/channel/55/bolajon" },
+  { key:"navo",    name:"Navo TV",    tag:"O'zMTRK — 24/7", color:"#a24fd6", type:"link", url:"https://tvcom.uz/uz/channel/56/navo" },
+  { key:"aqlvoy",  name:"Aqlvoy",     tag:"O'zMTRK — 24/7", color:"#ffd23f", type:"link", url:"https://tvcom.uz/uz/channel/132/aqlvoy" },
+];
+
+const grid = document.getElementById('grid');
+CHANNELS.forEach((ch, i) => {
+  const btn = document.createElement('button');
+  btn.className = 'ch';
+  btn.innerHTML = `
+    <div class="badge" style="background:${ch.color}">${ch.name.slice(0,2).toUpperCase()}</div>
+    <div class="name">${ch.name}</div>
+    <div class="tag"><span class="live-dot"></span>${ch.tag}</div>
+  `;
+  btn.onclick = () => openChannel(i);
+  grid.appendChild(btn);
+});
+
+function openChannel(i){
+  const ch = CHANNELS[i];
+  if (tg) tg.HapticFeedback.impactOccurred('light');
+
+  document.getElementById('player-title').textContent = ch.name;
+  const wrap = document.getElementById('frame-wrap');
+  const src = ch.type === 'yt'
+    ? `https://www.youtube.com/embed/live_stream?channel=${ch.ytId}&autoplay=1`
+    : ch.url;
+
+  wrap.innerHTML = `
+    <iframe src="${src}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+    <div class="fallback-note">
+      Video ko'rinmayaptimi?
+      <button class="fallback-btn" id="fallback-open">Rasmiy saytda ochish</button>
+    </div>`;
+  document.getElementById('fallback-open').onclick = () => {
+    if (tg && tg.openLink) tg.openLink(ch.url || `https://www.youtube.com/channel/${ch.ytId}`);
+    else window.open(ch.url || `https://www.youtube.com/channel/${ch.ytId}`, '_blank');
+  };
+  document.getElementById('player-view').classList.add('open');
+}
+
+function closePlayer(){
+  document.getElementById('player-view').classList.remove('open');
+  document.getElementById('frame-wrap').innerHTML = '';
+}
+
+// Bot orqali "?ch=kalit" bilan kelingan bo'lsa — o'sha kanalni darhol ochish
+(function openFromLink(){
+  const params = new URLSearchParams(window.location.search);
+  const key = params.get('ch');
+  if (!key) return;
+  const idx = CHANNELS.findIndex(c => c.key === key);
+  if (idx !== -1) openChannel(idx);
+})();
+
+if (tg && tg.BackButton) {
+  tg.BackButton.onClick(() => {
+    if (document.getElementById('player-view').classList.contains('open')) closePlayer();
+    else tg.close();
+  });
+  tg.BackButton.show();
+}
+</script>
+</body>
+</html>
